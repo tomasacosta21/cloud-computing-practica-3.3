@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+    MemorySize: 128
+
+Resources:
+
+  FacturasApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Name: api-facturas-sam
+      Description: API REST para consulta de facturas procesadas
+
+  ConsultarFacturasFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: consultar-facturas-sam
+      Handler: app.lambda_handler
+      CodeUri: consultar_facturas/
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Environment:
+        Variables:
+          TABLE_NAME: Invoices
+          AWS_REGION_NAME: us-east-1
+      Events:
+        GetFacturas:
+          Type: Api
+          Properties:
+            Path: /facturas
+            Method: GET
+            RestApiId: !Ref FacturasApi
+
+Outputs:
+  ApiEndpoint:
+    Description: Endpoint público de la API
+    Value: !Sub "https://${FacturasApi}.execute-api.${AWS::Region}.amazonaws.com/prod/facturas"
+  
+  FunctionArn:
+    Description: ARN de la función Lambda
+    Value: !GetAtt ConsultarFacturasFunction.Arn
