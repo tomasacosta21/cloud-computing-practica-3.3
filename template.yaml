@@ -115,7 +115,7 @@ Resources:
   InvoicesQueue:
     Type: AWS::SQS::Queue
     Properties:
-      VisibilityTimeout: 120
+      VisibilityTimeout: 300
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt InvoicesDLQ.Arn
         maxReceiveCount: 3
@@ -160,6 +160,7 @@ Resources:
       CodeUri: functions/parser/
       Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaRoleName}
       Timeout: 60
+      MemorySize: 512
       Environment:
         Variables:
           TABLE_NAME: !Ref FacturasTable

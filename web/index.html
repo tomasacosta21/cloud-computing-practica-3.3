@@ -8,31 +8,86 @@
   </head>
   <body>
     <main class="shell">
-      <section class="panel">
-        <header>
+      <header class="topbar">
+        <div>
           <p class="eyebrow">Servicio serverless</p>
           <h1>Validador de facturas</h1>
-        </header>
+        </div>
+        <button id="settings-toggle" class="secondary-button" type="button" aria-expanded="false">
+          Configuracion
+        </button>
+      </header>
 
-        <form id="upload-form" class="form">
-          <label for="api-url">API base</label>
-          <input
-            id="api-url"
-            name="api-url"
-            type="url"
-            placeholder="https://example.execute-api.us-east-1.amazonaws.com/prod"
-            required
-          />
+      <section id="settings-panel" class="settings-panel" hidden>
+        <label class="api-field" for="api-url">
+          API base
+          <input id="api-url" type="url" value="http://127.0.0.1:3000" />
+        </label>
+      </section>
 
-          <label for="invoice-file">Archivo Excel</label>
-          <input id="invoice-file" name="invoice-file" type="file" accept=".xlsx,.xls" required />
+      <section class="workspace">
+        <section class="panel">
+          <h2>Subir lote</h2>
+          <form id="upload-form" class="form">
+            <label for="invoice-file">Archivo Excel</label>
+            <input id="invoice-file" type="file" accept=".xlsx" required />
+            <button id="upload-button" type="submit">Subir lote</button>
+          </form>
+          <div id="upload-status" class="notice notice-muted" aria-live="polite">
+            Selecciona un archivo Excel para crear un nuevo lote.
+          </div>
+        </section>
 
-          <button type="submit">Generar URL y subir</button>
-        </form>
+        <section class="panel">
+          <h2>Consultar lote</h2>
+          <form id="query-form" class="form inline-form">
+            <label for="batch-id">Batch ID</label>
+            <input id="batch-id" type="text" autocomplete="off" />
+            <button id="query-button" type="submit">Consultar</button>
+          </form>
 
-        <pre id="result" class="result" aria-live="polite"></pre>
+          <dl id="batch-summary" class="summary-grid"></dl>
+        </section>
+      </section>
+
+      <section class="panel full-width">
+        <div class="section-head">
+          <h2>Facturas</h2>
+          <div class="pager">
+            <label for="page-size">Por pagina</label>
+            <select id="page-size">
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+            <span id="page-indicator" class="page-indicator" aria-live="polite">Pagina 1</span>
+            <button id="previous-page-button" type="button" disabled>Anterior</button>
+            <button id="next-page-button" type="button" disabled>Siguiente</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Factura</th>
+                <th>Estado</th>
+                <th>Cliente</th>
+                <th>Monto</th>
+                <th>CAE</th>
+                <th>Errores</th>
+              </tr>
+            </thead>
+            <tbody id="invoices-body">
+              <tr>
+                <td colspan="6" class="empty">Sin facturas para mostrar</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
+
+    <script src="config.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

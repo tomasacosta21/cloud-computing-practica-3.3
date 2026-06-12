@@ -6,7 +6,9 @@
   "pathParameters": {
     "batchId": "11111111-1111-1111-1111-111111111111"
   },
-  "queryStringParameters": null,
+  "queryStringParameters": {
+    "limit": "20"
+  },
   "body": null,
   "isBase64Encoded": false
 }

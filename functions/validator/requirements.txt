@@ -1,1 +1,1 @@
-# No external dependencies are required in this first stage.
+# No external dependencies are required.
