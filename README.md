@@ -3,43 +3,35 @@
 **Cloud Computing - Licenciatura en Sistemas, UNRN**<br>
 **Integrantes:** Acosta Tomas, Antrichipay Daniel, Cabeza Franco
 
-Aplicacion serverless definida con AWS SAM para cargar lotes de facturas desde un sitio estatico, subir el Excel directo a S3 con URL prefirmada y procesar cada factura de forma asincronica.
+Este proyecto implementa un sistema serverless para cargar lotes de facturas desde un sitio web, subir archivos Excel directamente a Amazon S3 y validar cada factura de forma asincronica. La validacion se realiza con un mock de AFIP/ARCA y los resultados quedan disponibles para consulta desde la interfaz web.
+
+La solucion se despliega en AWS mediante AWS SAM. Para el despliegue y las pruebas se utilizan AWS CLI, SAM CLI y Docker. El sitio estatico se publica en S3, la API se expone con API Gateway, el procesamiento se ejecuta con AWS Lambda, los mensajes se administran con SQS y los resultados se almacenan en DynamoDB.
+
+## Diagrama de arquietectura
+![diagrama](./diagrama.png)
 
 ## Arquitectura
 
-```text
-Web S3
-  -> API Gateway
-  -> ApiFunction
-  -> URL prefirmada
-  -> UploadsBucket
-  -> ParserFunction
-  -> InvoicesQueue
-  -> ValidatorFunction
-  -> FacturasTable
-```
+El stack de AWS SAM crea los siguientes recursos principales:
 
-Recursos principales:
-
-- `WebBucket`: sitio estatico.
-- `UploadsBucket`: bucket privado para archivos Excel.
-- `FacturasTable`: tabla DynamoDB single-table.
-- `InvoicesQueue`: cola principal SQS.
-- `InvoicesDLQ`: cola DLQ con `maxReceiveCount: 3`.
-- `ApiFunction`: genera URL prefirmada y consulta lotes/facturas.
-- `ParserFunction`: lee Excel con `openpyxl`, actualiza metadata del lote y envia mensajes SQS.
-- `ValidatorFunction`: valida con mock AFIP/ARCA, guarda facturas finales y actualiza contadores.
-- `CommonLayer`: helpers propios compartidos en `layers/common/python/common/`.
-
-Se dejan para una siguiente version la implementacion de SNS, Lambda notificadora, notificaciones y LocalStack.
+- `WebBucket`: bucket S3 para alojar el sitio estatico.
+- `UploadsBucket`: bucket S3 privado para recibir los archivos Excel.
+- `FacturasTable`: tabla DynamoDB single-table para lotes y facturas.
+- `InvoicesQueue`: cola SQS principal para procesar facturas.
+- `InvoicesDLQ`: cola SQS de mensajes fallidos.
+- `FacturasApi`: API Gateway REST para generar URLs prefirmadas y consultar resultados.
+- `ApiFunction`: Lambda que genera `batchId`, URLs prefirmadas y expone las consultas.
+- `ParserFunction`: Lambda que lee el Excel, actualiza metadata del lote y envia mensajes a SQS.
+- `ValidatorFunction`: Lambda que consume SQS, valida con el mock AFIP/ARCA, guarda facturas y actualiza contadores.
+- `CommonLayer`: layer con codigo propio compartido por las Lambdas.
 
 ## Flujo
 
 1. El frontend llama a `POST /batches/upload-url` con el nombre del Excel.
-2. `ApiFunction` crea el lote `WAITING_UPLOAD`, genera `batchId`, `s3Key` y URL prefirmada.
+2. `ApiFunction` genera `batchId`, `s3Key` y URL prefirmada.
 3. El navegador sube el Excel directo a `UploadsBucket`.
 4. El evento S3 dispara `ParserFunction`.
-5. `ParserFunction` lee la primera hoja, ignora filas vacias, cuenta facturas y envia una factura por mensaje a SQS.
+5. `ParserFunction` lee la primera hoja, ignora filas vacias, crea/actualiza la metadata del lote y luego envia una factura por mensaje a SQS.
 6. `ValidatorFunction` consume SQS, ejecuta el mock AFIP/ARCA y guarda cada factura en DynamoDB.
 7. `ValidatorFunction` actualiza contadores y marca el lote como `COMPLETED` o `COMPLETED_WITH_ERRORS`.
 8. El frontend consulta `GET /batches/{batchId}` y `GET /batches/{batchId}/invoices`.
@@ -92,19 +84,16 @@ Las consultas usan `GetItem` y `Query`; no se usa `Scan`.
 
 La carpeta `layers/common` contiene solo codigo propio compartido.
 
-## Requisitos
+## Prerrequisitos
 
-- Docker instalado y corriendo.
-- AWS CLI configurado con credenciales activas.
+- Cuenta o laboratorio de AWS con credenciales activas.
+- AWS CLI instalado.
 - AWS SAM CLI instalado.
+- Docker instalado y corriendo.
+- Permisos para crear y administrar los recursos definidos en `template.yaml`.
 - En AWS Academy/Vocareum, iniciar el laboratorio y copiar las credenciales vigentes antes de desplegar o probar.
-- El rol parametrizado por defecto es `LabRole`.
 
-Verificar identidad AWS:
-
-```bash
-aws sts get-caller-identity
-```
+El template usa por defecto el rol `LabRole`, parametrizado mediante `LambdaRoleName`.
 
 Verificar Docker:
 
@@ -113,6 +102,49 @@ docker ps
 ```
 
 Si `docker ps` falla, iniciar Docker antes de usar `sam build --use-container`.
+
+## Configurar credenciales AWS
+
+Configurar AWS CLI con las credenciales de la cuenta o del laboratorio:
+
+```bash
+aws configure
+```
+
+Completar los campos de la siguiente forma:
+
+```text
+AWS Access Key ID [None]: <AWS_ACCESS_KEY_ID>
+AWS Secret Access Key [None]: <AWS_SECRET_ACCESS_KEY>
+Default region name [None]: us-east-1
+Default output format [None]: json
+```
+
+En AWS Academy/Vocareum, los valores se obtienen desde la seccion de credenciales del laboratorio, normalmente en el bloque `AWS CLI`. Tienen esta forma:
+
+```text
+aws_access_key_id = ASIA...
+aws_secret_access_key = ...
+aws_session_token = ...
+```
+
+Si las credenciales incluyen token de sesion, configurarlo tambien:
+
+```bash
+aws configure set aws_session_token "<AWS_SESSION_TOKEN>"
+```
+
+Reemplazar:
+
+- `<AWS_ACCESS_KEY_ID>` por el valor `aws_access_key_id`.
+- `<AWS_SECRET_ACCESS_KEY>` por el valor `aws_secret_access_key`.
+- `<AWS_SESSION_TOKEN>` por el valor `aws_session_token`.
+
+Verificar que AWS CLI esta usando las credenciales correctas:
+
+```bash
+aws sts get-caller-identity
+```
 
 ## Despliegue en AWS
 
@@ -303,74 +335,6 @@ Ver logs del validator:
 ```bash
 aws logs tail /aws/lambda/servicio-validador-facturas-validator \
   --since 2h
-```
-
-Si CloudWatch Logs esta bloqueado, se puede invocar la Lambda API y pedir logs embebidos:
-
-```bash
-aws lambda invoke \
-  --function-name servicio-validador-facturas-api \
-  --payload fileb://events/api-create-upload-url.json \
-  --cli-binary-format raw-in-base64-out \
-  --log-type Tail \
-  /tmp/api-response.json \
-  --query 'LogResult' \
-  --output text | base64 --decode
-
-cat /tmp/api-response.json
-```
-
-Ese comando crea un lote de prueba porque ejecuta la Lambda real.
-
-Contar facturas guardadas en DynamoDB para un lote:
-
-```bash
-aws dynamodb query \
-  --table-name "<FacturasTableName>" \
-  --key-condition-expression "batchId = :b AND begins_with(entityKey, :p)" \
-  --expression-attribute-values '{":b":{"S":"<BATCH_ID>"},":p":{"S":"INVOICE#"}}' \
-  --select COUNT
-```
-
-Si `totalInvoices` es mayor que `processedInvoices`, revisar:
-
-- Si SQS todavia tiene mensajes pendientes.
-- Si la DLQ tiene mensajes.
-- Si los logs del validator muestran errores tecnicos.
-- Si los logs muestran `Factura ya procesada; no se incrementan contadores`, probablemente hay `InvoiceNumber` repetidos dentro del mismo Excel.
-
-Errores comunes:
-
-- `Failed to fetch` en el navegador puede ocultar un `500` real de API Gateway. Revisar Network y logs de `servicio-validador-facturas-api`.
-- `500 Internal Server Error` en `POST /batches/upload-url` suele indicar error de la Lambda API, permisos de DynamoDB/S3, variables de entorno faltantes o problema de layer/import.
-- `AccessDenied` con `voc-cancel-cred` indica que las credenciales del laboratorio fueron canceladas o bloqueadas. Reiniciar/refrescar credenciales del lab y abrir una terminal nueva.
-- `cloudformation:DescribeStacks` denegado impide leer outputs con CloudFormation; usar los outputs impresos por `sam deploy` o refrescar credenciales del laboratorio.
-- Los endpoints website de S3 son HTTP. Si se necesita HTTPS para APIs del navegador como portapapeles, usar CloudFront delante del sitio.
-
-## Comandos rapidos
-
-Validar template:
-
-```bash
-sam validate
-```
-
-Compilar con Docker:
-
-```bash
-sam build --use-container
-```
-
-Deploy guiado:
-
-```bash
-sam deploy --guided
-```
-
-El script de deploy tambien usa Docker para build:
-
-```bash
-./scripts/deploy.sh
 ```
 
 ## Pruebas locales
