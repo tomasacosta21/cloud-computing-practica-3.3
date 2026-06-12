@@ -72,15 +72,21 @@ def get_batch(batch_id: str, table=None) -> dict[str, Any] | None:
 def update_batch_processing(
     *,
     batch_id: str,
+    file_name: str,
+    s3_key: str,
     total_invoices: int,
-    queued_invoices: int,
+    queued_invoices: int | None = None,
     table=None,
 ) -> dict[str, Any]:
     selected_table = table or get_table()
+    now = utc_now()
+    queued_value = total_invoices if queued_invoices is None else queued_invoices
     response = selected_table.update_item(
         Key={"batchId": batch_id, "entityKey": "BATCH"},
         UpdateExpression=(
-            "SET #status = :status, totalInvoices = :total, queuedInvoices = :queued, "
+            "SET #status = :status, fileName = :file_name, s3Key = :s3_key, "
+            "createdAt = if_not_exists(createdAt, :created_at), "
+            "totalInvoices = :total, queuedInvoices = :queued, "
             "processedInvoices = :zero, validatedInvoices = :zero, rejectedInvoices = :zero, "
             "errorInvoices = :zero, updatedAt = :updated_at, completedAt = :completed_at "
             "REMOVE errorMessage"
@@ -88,10 +94,13 @@ def update_batch_processing(
         ExpressionAttributeNames={"#status": "status"},
         ExpressionAttributeValues={
             ":status": "PROCESSING",
+            ":file_name": file_name,
+            ":s3_key": s3_key,
             ":total": total_invoices,
-            ":queued": queued_invoices,
+            ":queued": queued_value,
             ":zero": 0,
-            ":updated_at": utc_now(),
+            ":created_at": now,
+            ":updated_at": now,
             ":completed_at": None,
         },
         ReturnValues="ALL_NEW",
@@ -99,22 +108,42 @@ def update_batch_processing(
     return response.get("Attributes", {})
 
 
-def mark_batch_failed(batch_id: str, message: str, table=None) -> dict[str, Any]:
+def mark_batch_failed(
+    batch_id: str,
+    message: str,
+    *,
+    file_name: str | None = None,
+    s3_key: str | None = None,
+    table=None,
+) -> dict[str, Any]:
     selected_table = table or get_table()
     now = utc_now()
+    update_parts = [
+        "#status = :status",
+        "errorMessage = :message",
+        "createdAt = if_not_exists(createdAt, :created_at)",
+        "updatedAt = :updated_at",
+        "completedAt = :completed_at",
+    ]
+    expression_values: dict[str, Any] = {
+        ":status": "FAILED",
+        ":message": message,
+        ":created_at": now,
+        ":updated_at": now,
+        ":completed_at": now,
+    }
+    if file_name is not None:
+        update_parts.append("fileName = :file_name")
+        expression_values[":file_name"] = file_name
+    if s3_key is not None:
+        update_parts.append("s3Key = :s3_key")
+        expression_values[":s3_key"] = s3_key
+
     response = selected_table.update_item(
         Key={"batchId": batch_id, "entityKey": "BATCH"},
-        UpdateExpression=(
-            "SET #status = :status, errorMessage = :message, updatedAt = :updated_at, "
-            "completedAt = :completed_at"
-        ),
+        UpdateExpression="SET " + ", ".join(update_parts),
         ExpressionAttributeNames={"#status": "status"},
-        ExpressionAttributeValues={
-            ":status": "FAILED",
-            ":message": message,
-            ":updated_at": now,
-            ":completed_at": now,
-        },
+        ExpressionAttributeValues=expression_values,
         ReturnValues="ALL_NEW",
     )
     return response.get("Attributes", {})

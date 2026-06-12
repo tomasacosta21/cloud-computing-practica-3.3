@@ -19,17 +19,11 @@ class FakeS3Client:
 
 
 def test_create_upload_url(monkeypatch):
-    stored_batches = []
     fake_s3 = FakeS3Client()
 
     monkeypatch.setenv("UPLOADS_BUCKET_NAME", "uploads-bucket")
     monkeypatch.setenv("PRESIGNED_URL_EXPIRATION_SECONDS", "900")
     monkeypatch.setattr(api_app, "_S3_CLIENT", fake_s3)
-    monkeypatch.setattr(
-        api_app,
-        "put_batch_initial",
-        lambda **kwargs: stored_batches.append(kwargs),
-    )
 
     response = api_app.lambda_handler(
         {
@@ -48,7 +42,6 @@ def test_create_upload_url(monkeypatch):
     assert body["uploadUrl"] == "https://uploads.example/presigned"
     assert body["uploadMethod"] == "PUT"
     assert body["uploadHeaders"]["Content-Type"] == api_app.EXCEL_CONTENT_TYPE
-    assert stored_batches[0]["file_name"] == "lote.xlsx"
     assert fake_s3.kwargs["Params"]["ContentType"] == api_app.EXCEL_CONTENT_TYPE
 
 
@@ -149,6 +142,38 @@ def test_parser_normalizes_row():
     assert invoice["amount"] == "1000.0"
     assert invoice["unitPrice"] == "500.0"
     assert invoice["customerName"] == "Cliente S.A."
+
+
+def test_parser_creates_batch_metadata_before_queueing(monkeypatch):
+    calls = []
+    parsed_messages = [{"batchId": "batch-1", "rowNumber": 2, "invoice": {"invoiceNumber": "A-1"}}]
+
+    monkeypatch.setattr(parser_app, "_download_object", lambda bucket, key: b"excel")
+    monkeypatch.setattr(parser_app, "parse_excel", lambda content, batch_id: parsed_messages)
+    monkeypatch.setattr(
+        parser_app,
+        "update_batch_processing",
+        lambda **kwargs: calls.append(("update", kwargs)),
+    )
+    monkeypatch.setattr(
+        parser_app,
+        "_send_messages",
+        lambda messages: calls.append(("send", messages)) or len(messages),
+    )
+
+    summary = parser_app.process_object(
+        bucket="uploads-bucket",
+        key="uploads/batch-1/lote.xlsx",
+        batch_id="batch-1",
+    )
+
+    assert calls[0][0] == "update"
+    assert calls[0][1]["batch_id"] == "batch-1"
+    assert calls[0][1]["file_name"] == "lote.xlsx"
+    assert calls[0][1]["s3_key"] == "uploads/batch-1/lote.xlsx"
+    assert calls[0][1]["total_invoices"] == 1
+    assert calls[1] == ("send", parsed_messages)
+    assert summary["queuedInvoices"] == 1
 
 
 def test_validator_process_message_updates_counters(monkeypatch):

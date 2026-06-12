@@ -40,6 +40,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     for record in event.get("Records", []):
         bucket, key = _s3_bucket_key(record)
+        file_name = key.split("/")[-1]
         batch_id = _batch_id_from_key(key)
 
         if not batch_id:
@@ -53,7 +54,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         except Exception as exc:
             message = f"Error tecnico en parser: {exc}"
             print(message)
-            mark_batch_failed(batch_id, message)
+            mark_batch_failed(batch_id, message, file_name=file_name, s3_key=key)
             raise
 
     return json_response(
@@ -71,7 +72,12 @@ def process_object(*, bucket: str, key: str, batch_id: str) -> dict[str, Any]:
     messages = parse_excel(workbook_bytes, batch_id=batch_id)
 
     if not messages:
-        mark_batch_failed(batch_id, "El Excel no contiene facturas no vacias")
+        mark_batch_failed(
+            batch_id,
+            "El Excel no contiene facturas no vacias",
+            file_name=file_name,
+            s3_key=key,
+        )
         return {
             "batchId": batch_id,
             "fileName": file_name,
@@ -80,12 +86,13 @@ def process_object(*, bucket: str, key: str, batch_id: str) -> dict[str, Any]:
             "status": "FAILED",
         }
 
-    queued = _send_messages(messages)
     update_batch_processing(
         batch_id=batch_id,
+        file_name=file_name,
+        s3_key=key,
         total_invoices=len(messages),
-        queued_invoices=queued,
     )
+    queued = _send_messages(messages)
 
     return {
         "batchId": batch_id,

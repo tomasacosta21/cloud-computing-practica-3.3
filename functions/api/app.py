@@ -9,12 +9,12 @@ from typing import Any
 
 try:
     from common.config import get_int_env, uploads_bucket_name
-    from common.dynamodb import get_batch, put_batch_initial, query_invoices
+    from common.dynamodb import get_batch, query_invoices
     from common.responses import error_response, json_response
 except ModuleNotFoundError:
     sys.path.append(str(Path(__file__).resolve().parents[2] / "layers/common/python"))
     from common.config import get_int_env, uploads_bucket_name
-    from common.dynamodb import get_batch, put_batch_initial, query_invoices
+    from common.dynamodb import get_batch, query_invoices
     from common.responses import error_response, json_response
 
 EXCEL_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -62,8 +62,6 @@ def create_upload_url(event: dict[str, Any]) -> dict[str, Any]:
         ExpiresIn=get_int_env("PRESIGNED_URL_EXPIRATION_SECONDS", 900) or 900,
         HttpMethod="PUT",
     )
-
-    put_batch_initial(batch_id=batch_id, file_name=file_name, s3_key=s3_key)
 
     return json_response(
         {
