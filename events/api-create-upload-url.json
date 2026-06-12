@@ -1,0 +1,12 @@
+{
+  "resource": "/batches/upload-url",
+  "path": "/batches/upload-url",
+  "httpMethod": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "pathParameters": null,
+  "queryStringParameters": null,
+  "body": "{\"fileName\":\"lote-facturas-afip.xlsx\"}",
+  "isBase64Encoded": false
+}

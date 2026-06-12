@@ -3,11 +3,11 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "fastapi33"
+stack_name = "servicio-validador-facturas"
 
 [default.build.parameters]
 cached = true
-parallel = true
+parallel = false
 
 [default.validate.parameters]
 lint = true

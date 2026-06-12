@@ -1,0 +1,16 @@
+{
+  "Records": [
+    {
+      "eventSource": "aws:s3",
+      "eventName": "ObjectCreated:Put",
+      "s3": {
+        "bucket": {
+          "name": "uploads-bucket-example"
+        },
+        "object": {
+          "key": "uploads/11111111-1111-1111-1111-111111111111/lote-facturas-afip.xlsx"
+        }
+      }
+    }
+  ]
+}

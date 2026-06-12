@@ -1,0 +1,17 @@
+{
+  "Records": [
+    {
+      "messageId": "message-1",
+      "receiptHandle": "receipt-handle-1",
+      "body": "{\"batchId\":\"11111111-1111-1111-1111-111111111111\",\"invoiceNumber\":\"0001-00000001\",\"amount\":12500.5}",
+      "attributes": {
+        "ApproximateReceiveCount": "1"
+      },
+      "messageAttributes": {},
+      "md5OfBody": "00000000000000000000000000000000",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:InvoicesQueue",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

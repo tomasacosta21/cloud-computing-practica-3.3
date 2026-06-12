@@ -40,12 +40,13 @@ def get_batch(batch_id: str, table=None) -> dict[str, Any] | None:
 
 
 def query_invoices(batch_id: str, table=None) -> list[dict[str, Any]]:
-    from boto3.dynamodb.conditions import Key
-
     selected_table = table or get_table()
     query_kwargs = {
-        "KeyConditionExpression": Key("batchId").eq(batch_id)
-        & Key("entityKey").begins_with("INVOICE#")
+        "KeyConditionExpression": "batchId = :batch_id AND begins_with(entityKey, :invoice_prefix)",
+        "ExpressionAttributeValues": {
+            ":batch_id": batch_id,
+            ":invoice_prefix": "INVOICE#",
+        },
     }
     items: list[dict[str, Any]] = []
 

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Validador de facturas</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <header>
+          <p class="eyebrow">Servicio serverless</p>
+          <h1>Validador de facturas</h1>
+        </header>
+
+        <form id="upload-form" class="form">
+          <label for="api-url">API base</label>
+          <input
+            id="api-url"
+            name="api-url"
+            type="url"
+            placeholder="https://example.execute-api.us-east-1.amazonaws.com/prod"
+            required
+          />
+
+          <label for="invoice-file">Archivo Excel</label>
+          <input id="invoice-file" name="invoice-file" type="file" accept=".xlsx,.xls" required />
+
+          <button type="submit">Generar URL y subir</button>
+        </form>
+
+        <pre id="result" class="result" aria-live="polite"></pre>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,102 +1,196 @@
-# Práctica 3.3 — Flujo Serverless con AWS SAM CLI
+# Servicio validador de facturas
 
-**Cloud Computing — Licenciatura en Sistemas, UNRN**  
-**Integrantes:** Acosta Tomás, Antrichipay Daniel, Cabeza Franco
+**Cloud Computing - Licenciatura en Sistemas, UNRN**<br>
+**Integrantes:** Acosta Tomas, Antrichipay Daniel, Cabeza Franco
 
----
+Este repositorio contiene una aplicacion serverless definida con AWS SAM para cargar lotes de facturas, subir el archivo Excel directo a S3 mediante URL prefirmada y procesar las facturas de forma asincronica.
 
-## Descripción
+## Arquitectura objetivo
 
-Este proyecto replica el flujo de consulta de facturas implementado manualmente en la Práctica 3.2, utilizando AWS SAM CLI como herramienta de Infrastructure as Code (IaC). El objetivo es exponer una API REST que permita consultar las facturas procesadas almacenadas en la tabla DynamoDB `Invoices`.
+```text
+Web S3 -> API Gateway -> ApiFunction -> S3 uploads
+                                 |
+                                 v
+                         DynamoDB FacturasTable
 
-## Arquitectura
-
+S3 uploads -> ParserFunction -> SQS InvoicesQueue -> ValidatorFunction -> DynamoDB FacturasTable
+                                      |
+                                      v
+                                  InvoicesDLQ
 ```
-Cliente HTTP → API Gateway (GET /facturas) → Lambda (consultar-facturas-sam) → DynamoDB (Invoices)
+
+No se implementan SNS, notificaciones ni LocalStack en esta etapa.
+
+## Primera etapa implementada
+
+- Estructura separada por Lambda en `functions/api`, `functions/parser` y `functions/validator`.
+- `POST /batches/upload-url` genera `batchId`, `s3Key` y una URL prefirmada real para subir el Excel al bucket privado.
+- `GET /batches/{batchId}` consulta el item `BATCH` con `GetItem`.
+- `GET /batches/{batchId}/invoices` consulta facturas con `Query` y `begins_with(entityKey, 'INVOICE#')`; no usa `Scan`.
+- Bucket privado para uploads con CORS y evento S3 hacia la Lambda parser.
+- Bucket S3 para sitio estatico en `web/`.
+- Cola SQS principal con DLQ y `maxReceiveCount: 3`.
+- Lambda validator conectada a SQS con `ReportBatchItemFailures`.
+- Layer comun con codigo propio en `layers/common/python/common/`.
+- Rol Lambda parametrizado con `LambdaRoleName`, default `LabRole`.
+
+## Pendiente para la segunda etapa
+
+- Leer el Excel real con `openpyxl`.
+- Dividir el lote en mensajes SQS, una factura por mensaje.
+- Completar la validacion AFIP mockeada.
+- Guardar resultados finales de facturas en DynamoDB.
+- Actualizar contadores y estados del lote.
+
+## Modelo DynamoDB
+
+Se usa una sola tabla con clave compuesta:
+
+```text
+PK: batchId
+SK: entityKey
 ```
 
-Los recursos desplegados por SAM son:
+Ejemplos:
 
-- **API Gateway** — Punto de entrada público para las solicitudes de consulta.
-- **Lambda Function** — Ejecuta la lógica de consulta sobre DynamoDB usando boto3.
-- **IAM** — La función utiliza el rol `LabRole` provisto por AWS Academy.
-
-La tabla DynamoDB `Invoices` no es creada por este stack, sino referenciada desde la práctica anterior. La función accede a ella mediante la variable de entorno `TABLE_NAME`.
-
-## Estructura del proyecto
-
+```text
+batchId = <uuid>
+entityKey = BATCH
 ```
+
+```text
+batchId = <uuid>
+entityKey = INVOICE#0001-00000001
+```
+
+Las consultas por lote deben usar `Query`; evitar `Scan` para este flujo.
+
+## Estructura
+
+```text
 .
-├── consultar_facturas/
-│   ├── app.py              # Handler de la Lambda
-│   └── requirements.txt    # Dependencias Python
-├── events/
-│   └── event.json          # Evento de prueba para invocación local
+├── template.yaml
+├── samconfig.toml
+├── README.md
+├── functions/
+│   ├── api/
+│   │   ├── app.py
+│   │   └── requirements.txt
+│   ├── parser/
+│   │   ├── app.py
+│   │   └── requirements.txt
+│   └── validator/
+│       ├── app.py
+│       └── requirements.txt
 ├── layers/
 │   └── common/
 │       └── python/
-│           └── common/     # Helpers propios compartidos
-├── tests/                  # Tests unitarios e integración
-├── template.yaml           # Infraestructura como código (SAM/CloudFormation)
-├── samconfig.toml          # Configuración persistente del deploy
-└── README.md
+│           └── common/
+│               ├── __init__.py
+│               ├── config.py
+│               ├── dynamodb.py
+│               ├── responses.py
+│               └── afip_mock.py
+├── web/
+│   ├── index.html
+│   ├── app.js
+│   └── styles.css
+├── events/
+│   ├── api-create-upload-url.json
+│   ├── api-get-batch.json
+│   ├── api-get-invoices.json
+│   ├── s3-object-created.json
+│   └── sqs-invoice-batch.json
+└── scripts/
+    ├── deploy.sh
+    └── sync-web.sh
 ```
 
-La carpeta heredada `layer/python/` no se versiona ni se reutiliza: contenia dependencias
-vendorizadas como `boto3`, `botocore`, `requests` y `urllib3`. La nueva capa comun solo
-contiene codigo propio del proyecto bajo `layers/common/python/common/`.
+La carpeta heredada `layer/python/` no se reutiliza: contenia dependencias vendorizadas como `boto3`, `botocore`, `requests` y `urllib3`. La capa nueva contiene solo codigo propio compartido.
 
-## Requisitos previos
+## Requisitos
 
 - AWS SAM CLI
-- AWS CLI con credenciales configuradas (`aws configure`)
-- Python 3.12
-- Docker (para testing local)
+- AWS CLI con credenciales configuradas
+- Python 3.12, o Docker para compilar con el runtime correcto
+- Docker para `sam build --use-container` y ejecucion local con SAM
 
 ## Comandos
 
-### Build
+Build:
 
 ```bash
 sam build
 ```
 
-### Deploy
+Si no tenes Python 3.12 instalado localmente, usá Docker con SAM:
 
 ```bash
-sam deploy --region us-east-1
+sam build --use-container
 ```
 
-### Testing local
+Deploy guiado:
 
 ```bash
-sam local invoke ConsultarFacturasFunction --event events/event.json
+sam deploy --guided
 ```
+
+El script de deploy ya compila con Docker:
+
+```bash
+./scripts/deploy.sh
+```
+
+## Pruebas locales
+
+Verificar que Docker este corriendo:
+
+```bash
+docker ps
+```
+
+Validar el template:
+
+```bash
+sam validate
+```
+
+Compilar usando contenedor SAM:
+
+```bash
+sam build --use-container
+```
+
+Invoke local de la API:
+
+```bash
+sam local invoke ApiFunction -e events/api-create-upload-url.json
+sam local invoke ApiFunction --event events/api-get-batch.json
+sam local invoke ApiFunction --event events/api-get-invoices.json
+```
+
+Invoke local de eventos asincronicos:
+
+```bash
+sam local invoke ParserFunction --event events/s3-object-created.json
+sam local invoke ValidatorFunction --event events/sqs-invoice-batch.json
+```
+
+Levantar API local:
 
 ```bash
 sam local start-api
-curl http://localhost:3000/facturas
+curl -X POST http://localhost:3000/batches/upload-url \
+  -H 'Content-Type: application/json' \
+  -d '{"fileName":"lote-facturas-afip.xlsx"}'
 ```
 
-### Verificar endpoint desplegado
+`sam local` ejecuta las Lambdas en Docker, pero no crea S3, SQS ni DynamoDB localmente. Para probar esos servicios sin AWS real haria falta LocalStack, que no vamos a implementar por ahora.
+
+Sincronizar el sitio estatico luego del deploy:
 
 ```bash
-curl https://m597hu6180.execute-api.us-east-1.amazonaws.com/prod/facturas
+./scripts/sync-web.sh <web-bucket-name>
 ```
 
-### Eliminar el stack
-
-```bash
-sam delete --stack-name fastapi33
-```
-
-## Ventajas de SAM CLI vs. configuración manual en consola
-
-| Aspecto | Consola AWS (Práctica 3.2) | SAM CLI (Práctica 3.3) |
-|---|---|---|
-| Reproducibilidad | Manual, propensa a errores | Automatizada, idempotente |
-| Versionado | No aplica | Código en Git |
-| Velocidad de despliegue | Alto tiempo por configuración manual | `sam build && sam deploy` |
-| Testing local | No disponible | `sam local invoke` / `sam local start-api` |
-| Gestión de recursos | Individual por servicio | Declarativa en `template.yaml` |
-| Rollback ante errores | Manual | Automático por CloudFormation |
+El Excel no pasa por API Gateway: el frontend pide una URL prefirmada y sube el archivo directo al bucket privado de uploads.

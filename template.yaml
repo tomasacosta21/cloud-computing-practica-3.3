@@ -1,13 +1,35 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
+Description: Servicio serverless para carga y validacion asincronica de facturas.
+
+Parameters:
+  LambdaRoleName:
+    Type: String
+    Default: LabRole
+    Description: Nombre del rol IAM provisto por AWS Academy para ejecutar las Lambdas.
 
 Globals:
   Function:
     Runtime: python3.12
-    Timeout: 10
+    Timeout: 30
     MemorySize: 128
+    Architectures:
+      - x86_64
+    Layers:
+      - !Ref CommonLayer
 
 Resources:
+
+  FacturasApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Name: servicio-validador-facturas-api
+      Description: API REST para carga y consulta de lotes de facturas
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'OPTIONS,GET,POST,PUT'"
 
   CommonLayer:
     Type: AWS::Serverless::LayerVersion
@@ -19,39 +41,187 @@ Resources:
         - python3.12
       RetentionPolicy: Delete
 
-  FacturasApi:
-    Type: AWS::Serverless::Api
+  FacturasTable:
+    Type: AWS::DynamoDB::Table
     Properties:
-      StageName: prod
-      Name: api-facturas-sam
-      Description: API REST para consulta de facturas procesadas
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: batchId
+          AttributeType: S
+        - AttributeName: entityKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: batchId
+          KeyType: HASH
+        - AttributeName: entityKey
+          KeyType: RANGE
 
-  ConsultarFacturasFunction:
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - PUT
+              - POST
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - '*'
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3000
+
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        IgnorePublicAcls: false
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadForStaticWebsite
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${WebBucket.Arn}/*'
+
+  InvoicesDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+
+  InvoicesQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 120
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt InvoicesDLQ.Arn
+        maxReceiveCount: 3
+
+  ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: consultar-facturas-sam
+      FunctionName: servicio-validador-facturas-api
       Handler: app.lambda_handler
-      CodeUri: consultar_facturas/
-      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-      Layers:
-        - !Ref CommonLayer
+      CodeUri: functions/api/
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaRoleName}
       Environment:
         Variables:
-          TABLE_NAME: Invoices
-          AWS_REGION_NAME: us-east-1
+          TABLE_NAME: !Ref FacturasTable
+          UPLOADS_BUCKET_NAME: !Ref UploadsBucket
+          PRESIGNED_URL_EXPIRATION_SECONDS: '900'
       Events:
-        GetFacturas:
+        CreateUploadUrl:
           Type: Api
           Properties:
-            Path: /facturas
-            Method: GET
             RestApiId: !Ref FacturasApi
+            Path: /batches/upload-url
+            Method: POST
+        GetBatch:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FacturasApi
+            Path: /batches/{batchId}
+            Method: GET
+        GetBatchInvoices:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FacturasApi
+            Path: /batches/{batchId}/invoices
+            Method: GET
+
+  ParserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: servicio-validador-facturas-parser
+      Handler: app.lambda_handler
+      CodeUri: functions/parser/
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaRoleName}
+      Timeout: 60
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref FacturasTable
+          QUEUE_URL: !Ref InvoicesQueue
+      Events:
+        UploadCreated:
+          Type: S3
+          Properties:
+            Bucket: !Ref UploadsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+
+  ValidatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: servicio-validador-facturas-validator
+      Handler: app.lambda_handler
+      CodeUri: functions/validator/
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaRoleName}
+      Timeout: 60
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref FacturasTable
+          AFIP_MOCK_DELAY_SECONDS: '0'
+      Events:
+        InvoicesFromQueue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt InvoicesQueue.Arn
+            BatchSize: 5
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
 
 Outputs:
   ApiEndpoint:
-    Description: Endpoint público de la API
-    Value: !Sub "https://${FacturasApi}.execute-api.${AWS::Region}.amazonaws.com/prod/facturas"
-  
-  FunctionArn:
-    Description: ARN de la función Lambda
-    Value: !GetAtt ConsultarFacturasFunction.Arn
+    Description: URL base de la API REST
+    Value: !Sub https://${FacturasApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+
+  UploadUrlEndpoint:
+    Description: Endpoint para solicitar URL prefirmada de subida
+    Value: !Sub https://${FacturasApi}.execute-api.${AWS::Region}.amazonaws.com/prod/batches/upload-url
+
+  WebBucketName:
+    Description: Bucket S3 del sitio estatico
+    Value: !Ref WebBucket
+
+  WebSiteUrl:
+    Description: URL website del bucket S3 estatico
+    Value: !GetAtt WebBucket.WebsiteURL
+
+  UploadsBucketName:
+    Description: Bucket privado para archivos Excel subidos
+    Value: !Ref UploadsBucket
+
+  FacturasTableName:
+    Description: Tabla DynamoDB single-table para lotes y facturas
+    Value: !Ref FacturasTable
+
+  InvoicesQueueUrl:
+    Description: URL de la cola principal de facturas
+    Value: !Ref InvoicesQueue

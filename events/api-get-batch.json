@@ -1,0 +1,12 @@
+{
+  "resource": "/batches/{batchId}",
+  "path": "/batches/11111111-1111-1111-1111-111111111111",
+  "httpMethod": "GET",
+  "headers": {},
+  "pathParameters": {
+    "batchId": "11111111-1111-1111-1111-111111111111"
+  },
+  "queryStringParameters": null,
+  "body": null,
+  "isBase64Encoded": false
+}
