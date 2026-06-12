@@ -1,6 +1,12 @@
 
 # Created by https://www.gitignore.io/api/osx,linux,python,windows,pycharm,visualstudiocode
 
+### Project generated artifacts / legacy vendored layer ###
+.aws-sam/
+layer/python/
+__pycache__/
+*.pyc
+
 ### Linux ###
 *~
 

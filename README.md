@@ -32,13 +32,19 @@ La tabla DynamoDB `Invoices` no es creada por este stack, sino referenciada desd
 │   └── requirements.txt    # Dependencias Python
 ├── events/
 │   └── event.json          # Evento de prueba para invocación local
-├── layer/
-│   └── python/             # Dependencias para Lambda Layer
+├── layers/
+│   └── common/
+│       └── python/
+│           └── common/     # Helpers propios compartidos
 ├── tests/                  # Tests unitarios e integración
 ├── template.yaml           # Infraestructura como código (SAM/CloudFormation)
 ├── samconfig.toml          # Configuración persistente del deploy
 └── README.md
 ```
+
+La carpeta heredada `layer/python/` no se versiona ni se reutiliza: contenia dependencias
+vendorizadas como `boto3`, `botocore`, `requests` y `urllib3`. La nueva capa comun solo
+contiene codigo propio del proyecto bajo `layers/common/python/common/`.
 
 ## Requisitos previos
 
@@ -48,12 +54,6 @@ La tabla DynamoDB `Invoices` no es creada por este stack, sino referenciada desd
 - Docker (para testing local)
 
 ## Comandos
-
-### Instalar dependencias de la Layer
-
-```bash
-pip3 install -r consultar_facturas/requirements.txt -t layer/python
-```
 
 ### Build
 

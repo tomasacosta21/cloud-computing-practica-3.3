@@ -9,6 +9,16 @@ Globals:
 
 Resources:
 
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: facturas-common
+      Description: Codigo comun compartido por las Lambdas del proyecto
+      ContentUri: layers/common/
+      CompatibleRuntimes:
+        - python3.12
+      RetentionPolicy: Delete
+
   FacturasApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -23,6 +33,8 @@ Resources:
       Handler: app.lambda_handler
       CodeUri: consultar_facturas/
       Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Layers:
+        - !Ref CommonLayer
       Environment:
         Variables:
           TABLE_NAME: Invoices
