@@ -29,35 +29,6 @@ def get_table(name: str | None = None):
     return dynamodb_resource().Table(name or table_name())
 
 
-def put_batch_initial(
-    *,
-    batch_id: str,
-    file_name: str,
-    s3_key: str,
-    table=None,
-) -> dict[str, Any]:
-    now = utc_now()
-    item = {
-        "batchId": batch_id,
-        "entityKey": "BATCH",
-        "status": "WAITING_UPLOAD",
-        "fileName": file_name,
-        "s3Key": s3_key,
-        "totalInvoices": 0,
-        "queuedInvoices": 0,
-        "processedInvoices": 0,
-        "validatedInvoices": 0,
-        "rejectedInvoices": 0,
-        "errorInvoices": 0,
-        "createdAt": now,
-        "updatedAt": now,
-        "completedAt": None,
-    }
-    selected_table = table or get_table()
-    selected_table.put_item(Item=item)
-    return item
-
-
 def get_batch(batch_id: str, table=None) -> dict[str, Any] | None:
     selected_table = table or get_table()
     response = selected_table.get_item(
