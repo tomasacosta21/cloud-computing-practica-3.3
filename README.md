@@ -7,7 +7,7 @@ Este proyecto implementa un sistema serverless para cargar lotes de facturas des
 
 La solucion se despliega en AWS mediante AWS SAM. Para el despliegue y las pruebas se utilizan AWS CLI, SAM CLI y Docker. El sitio estatico se publica en S3, la API se expone con API Gateway, el procesamiento se ejecuta con AWS Lambda, los mensajes se administran con SQS y los resultados se almacenan en DynamoDB.
 
-## Diagrama de arquietectura
+## Diagrama de arquitectura
 ![diagrama](./diagrama.png)
 
 ## Arquitectura
